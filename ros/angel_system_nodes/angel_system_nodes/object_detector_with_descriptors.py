@@ -232,6 +232,7 @@ class ObjectDetectorWithDescriptors(Node):
             throttle_duration_sec=1,
         )
         log.info("Published detection set message")
+        print(msg)
 
     def preprocess_image(self, im_in):
         """
