@@ -80,12 +80,14 @@ class QuestionAnswerer(Node):
                     self.prompt_gpt(user_utterance) + "\n", "light_green"
                 )
         except RuntimeError as err:
-            print(err)
+            self.log.info(err)
             colored_apology = colored(
                 "I'm sorry. I don't know how to answer your statement.", "light_red"
             )
             colored_emotion = colored(user_emotion, "light_red")
-            return_msg = f"{colored_apology} I understand that you feel {colored_emotion}."
+            return_msg = (
+                f"{colored_apology} I understand that you feel {colored_emotion}."
+            )
         return return_msg
 
     def question_answer_callback(self, msg):
