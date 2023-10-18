@@ -25,8 +25,10 @@ root: <%= ENV["ANGEL_WORKSPACE_DIR"] %>
 # on_project_start: command
 on_project_start: |
   export ROS_NAMESPACE=${ROS_NAMESPACE:-/debug}
+  export HL2_IP=${HL2_IP:-192.168.1.101}
   export CONFIG_DIR=${ANGEL_WORKSPACE_DIR}/src/angel_system_nodes/configs
-  export NODE_RESOURCES_DIR=${ANGEL_WORKSPACE_DIR}/src/angel_system_nodes/resource
+  export MODEL_DIR=${ANGEL_WORKSPACE_DIR}/model_files
+  export BERKELEY_CONFIG_DIR=${ANGEL_WORKSPACE_DIR}/angel_system/berkeley/configs
 # Run on project start, the first time
 # on_project_first_start: command
 
@@ -59,8 +61,73 @@ tmux_options: -f <%= ENV["ANGEL_WORKSPACE_DIR"] %>/tmux/tmux.conf
 # attach: false
 
 windows:
-  # - ros_bag_play: ros2 bag play <<PATH_TO_BAG_FILE>>
-  - ros_bag_play: sleep 5; ros2 bag play /angel_workspace/ros_bags/rosbag2_2023_03_01-17_28_00/rosbag2_2023_03_01-17_28_00_0.db3
+  - datahub: ros2 run ros_tcp_endpoint default_server_endpoint --ros-args
+      -r __ns:=${ROS_NAMESPACE}
+      -p ROS_IP:=0.0.0.0
+  - hl2ss_bridge: ros2 run angel_system_nodes hl2ss_ros_bridge --ros-args
+      -r __ns:=${ROS_NAMESPACE}
+      -p ip_addr:=${HL2_IP}
+      -p image_topic:=PVFramesBGR
+      -p image_ts_topic:=disable
+      -p hand_pose_topic:=disable
+      -p audio_topic:=HeadsetAudioData
+      -p head_pose_topic:=HeadsetPoseData
+      -p sm_topic:=disable
+      -p rm_depth_AHAT:=disable
+      -p pv_width:=760
+      -p pv_height:=428
+      -p pv_framerate:=30
+      -p sm_freq:=5
+  - sensor_input:
+      layout: even-vertical
+      panes:
+        # - ros_bag_play: ros2 bag play ros_bags/hannah_av.db3
+
+        # Old videos were recorded in NV12
+        #- image_converter: ros2 run angel_datahub ImageConverter --ros-args
+        #    -r __ns:=${ROS_NAMESPACE}
+        #    -p topic_input_images:=PVFramesNV12
+        #    -p topic_output_images:=PVFramesRGB
+
+        - image_ts_relay: ros2 run angel_system_nodes  image_timestamp_relay --ros-args
+            -r __ns:=${ROS_NAMESPACE}
+            -p image_topic:=PVFramesBGR
+            -p output_topic:=PVFramesBGR_TS
+
+        # Visualize RGB Images being output from the headset
+        - rqt_rgb_images: rqt -s rqt_image_view/ImageView
+            --args ${ROS_NAMESPACE}/PVFramesBGR
+            --ros-args -p _image_transport:=raw
+  - object_detector:
+      layout: even-vertical
+      panes:
+        - object_detector: ros2 run angel_system_nodes berkeley_object_detector --ros-args
+            -r __ns:=${ROS_NAMESPACE}
+            -p image_topic:=PVFramesBGR
+            -p det_topic:=ObjectDetections2d
+            -p det_conf_threshold:=0.1
+            -p model_config:=${BERKELEY_CONFIG_DIR}/MC50-InstanceSegmentation/cooking/coffee/stage2/mask_rcnn_R_50_FPN_1x_demo.yaml
+            -p cuda_device_id:=0
+        - simple_2d_overlay: ros2 run angel_debug Simple2dDetectionOverlay --ros-args
+            -r __ns:=${ROS_NAMESPACE}
+            -p topic_input_images:=PVFramesBGR
+            -p topic_input_det_2d:=ObjectDetections2d
+            -p topic_output_images:=pv_image_detections_2d
+            -p filter_top_k:=-1
+  - activity_classifier: ros2 run angel_system_nodes activity_classifier_tcn --ros-args
+      -r __ns:=${ROS_NAMESPACE}
+      -p image_ts_topic:=PVFramesBGR_TS
+      -p det_topic:=ObjectDetections2d
+      -p act_topic:=ActivityDetections
+      -p model_weights:=${MODEL_DIR}/activity_tcn-coffee-checkpoint.ckpt
+      -p model_mapping:=${MODEL_DIR}/activity_tcn-coffee-mapping.txt
+      -p model_det_label_mapping:=${MODEL_DIR}/activity_tcn-coffee-det_label_mapping.json
+      -p model_device:=cuda
+      -p model_dets_conv_version:=5
+      -p window_size:=30
+      -p buffer_max_size_seconds:=5
+      -p image_pix_width:=1280
+      -p image_pix_height:=720
   - vocal:
       layout: even-vertical
       panes:
@@ -100,8 +167,10 @@ windows:
   - question_answering:
       layout: even-vertical
       panes:
-        - gpt_emotion_detection: ros2 run angel_system_nodes question_answerer --ros-args
+        - gpt_qa: ros2 run angel_system_nodes visual_question_answerer --ros-args
            -r __ns:=${ROS_NAMESPACE}
            -p user_emotion_topic:=gpt_emotion_topic
+           -p object_detections_topic:=ObjectDetections2d
+           -p action_classifications_topic:=ActivityDetections
            -p system_text_response_topic:=system_text_response_topic
            -p few_shot_prompt_file:=${NODE_RESOURCES_DIR}/question_answer_site_demo_prompt
