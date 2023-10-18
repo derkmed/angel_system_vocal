@@ -101,6 +101,7 @@ windows:
       layout: even-vertical
       panes:
         - gpt_question_answering: ros2 run angel_system_nodes question_answerer --ros-args
+        - gpt_emotion_detection: ros2 run angel_system_nodes langchain_question_answerer --ros-args
            -r __ns:=${ROS_NAMESPACE}
            -p user_emotion_topic:=gpt_emotion_topic
            -p system_text_response_topic:=system_text_response_topic
