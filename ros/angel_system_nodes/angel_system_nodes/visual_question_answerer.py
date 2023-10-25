@@ -1,5 +1,5 @@
-import json
-from langchain import PromptTemplate
+
+import langchain
 from langchain.chains import LLMChain
 from langchain.chat_models import ChatOpenAI
 import openai
@@ -49,8 +49,9 @@ Answer:"""
 INFERENCE_SAMPLE_SUFFIX = """Question: {question}
 Answer:"""
 
+langchain.debug = True
 
-class TaskObjQuestionAnswerer(Node):
+class VisualQuestionAnswerer(Node):
 
     class TimestampedEntity:
 
@@ -77,6 +78,8 @@ class TaskObjQuestionAnswerer(Node):
         self._in_objects_topic = param_values[IN_OBJECT_DETECTION_TOPIC]
         self._in_actions_topic = param_values[IN_ACT_CLFN_TOPIC]
         self._out_qa_topic = param_values[OUT_QA_TOPIC]
+        self._object_dtctn_threshold = param_values[IN_OBJECT_DETECTION_THRESHOLD]
+        self._action_clfn_threshold = param_values[IN_ACT_CLFN_THRESHOLD]
 
         self.question_queue = queue.Queue()
         self.action_classification_queue = queue.Queue()
@@ -136,7 +139,7 @@ class TaskObjQuestionAnswerer(Node):
             temperature=0.0,
             max_tokens=64,
         )
-        zero_shot_prompt = PromptTemplate(
+        zero_shot_prompt = langchain.PromptTemplate(
             input_variables=["action", "observables", "question"],
             template=PROMPT_INSTRUCTIONS,
         )
@@ -149,9 +152,10 @@ class TaskObjQuestionAnswerer(Node):
         '''
         Stores the action label with the highest confidence in
         self.action_classification_queue.
-        '''       
+        '''
+        print(msg)
         action_classification = max(zip(msg.label_vec, msg.conf_vec), key = itemgetter(1))[0]
-        te = TaskObjQuestionAnswerer.TimestampedEntity(self._get_sec(msg), action_classification)
+        te = VisualQuestionAnswerer.TimestampedEntity(self._get_sec(msg), action_classification)
         self.action_classification_queue.put(te)
 
     def _add_detected_objects(self, msg: ObjectDetection2dSet) -> str:
@@ -159,19 +163,21 @@ class TaskObjQuestionAnswerer(Node):
         Stores all items with a confidence score above IN_OBJECT_DETECTION_THRESHOLD.
         '''
         detected_objects = set()
-        for obj, score in zip(msg.label_vec, msg.conf_vec):
-            if score > IN_OBJECT_DETECTION_THRESHOLD:
-                detected_objects.add(obj)
+        for obj, score in zip(msg.label_vec, msg.label_confidences):
+            if score < self._object_dtctn_threshold:
+                # Optional threshold filtering
+                continue
+            detected_objects.add(obj)
         if detected_objects:
-            te = TaskObjQuestionAnswerer.TimestampedEntity(self._get_sec(msg), detected_objects)
-            self.action_classification_queue.put(te)
+            te = VisualQuestionAnswerer.TimestampedEntity(self._get_sec(msg), detected_objects)
+            self.detected_objects_queue.put(te)
 
     def _get_action_before(self, curr_time: int) -> str:
         '''
         Returns the latest action classification in self.action_classification_queue
         that does not occur before a provided time.
         '''
-        latest_action = ""
+        latest_action = "nothing"
         while not self.action_classification_queue.empty():
             next = self.action_classification_queue.queue[0]
             if next.time < curr_time:
@@ -194,6 +200,8 @@ class TaskObjQuestionAnswerer(Node):
                 self.detected_objects_queue.get()
             else:
                 break
+        if not observables:
+            return "nothing"
         return ", ".join(list(observables))                
 
     def get_response(self, msg: InterpretedAudioUserEmotion):
@@ -206,8 +214,10 @@ class TaskObjQuestionAnswerer(Node):
         try:
             # Apply detected actions.
             action = self._get_action_before(self._get_sec(msg))
+            # print(f"Latest action: {action}")
             # Apply detected objects.
             observables = self._get_observables_before(self._get_sec(msg))
+            # print(f"Observed objects: {observables}")
             response = self.chain.run(
                 action=action, observables=observables, question=msg.utterance_text
             )
@@ -236,8 +246,7 @@ class TaskObjQuestionAnswerer(Node):
         """
         while True:
             msg = self.question_queue.get()
-            emotion = msg.user_emotion
-            response = self.get_response(msg, emotion)
+            response = self.get_response(msg)
             self.publish_generated_response(msg.utterance_text, response)
 
     def publish_generated_response(self, utterance: str, response: str):
@@ -265,7 +274,7 @@ class TaskObjQuestionAnswerer(Node):
 
 def main():
     rclpy.init()
-    question_answerer = TaskObjQuestionAnswerer()
+    question_answerer = VisualQuestionAnswerer()
     rclpy.spin(question_answerer)
     question_answerer.destroy_node()
     rclpy.shutdown()
