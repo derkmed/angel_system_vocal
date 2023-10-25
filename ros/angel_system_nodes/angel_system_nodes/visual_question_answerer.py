@@ -27,18 +27,22 @@ IN_ACT_CLFN_THRESHOLD = "action_classification_threshold"
 
 # Below is the complete set of prompt instructions.
 PROMPT_INSTRUCTIONS = """
-You will be given a User Scenario. All the objects in front of and observable to the user are included.
+You are given a User Scenario. All the objects in front of and observable to the user are included.
 Your task is to use the Action Steps to answer the user's Question.
 
 Action Steps:
-Step 1. Place tourniquet over affected extremity 2-3 inches above wound site.
-Step 2. Pull tourniquet tight.
-Step 3. Apply strap to strap body.
-Step 4. Turn the windlass clock wise or counter clockwise until hemorrhage is controlled.
-Step 5. Lock the windlass into the windlass keeper.
-Step 6. Pull remaining strap over the windlass keeper.
-Step 7. Secure strap and windlass keeper with keeper securing device.
-Step 8. Mark the time on securing device strap with permanent marker. You are complete.
+1. Measure 12 ounces of cold water and transfer to a kettle.
+2. Assemble the filter cone. Place the dripper on top of a coffee mug.
+3. Prepare the filter insert by folding the paper filter in half to create a semi-circle, and in half again
+to create a quarter-circle. Place the paper filter in the dripper and spread open to create a cone.
+4. Weigh the coffee beans and grind until the coffee grounds are the consistency of coarse sand,
+about 20 seconds. Transfer the grounds to the filter cone.
+5. Check the temperature of the water.
+6. Pour a small amount of water in the filter to wet the grounds. Wait about 30 seconds.
+7. Slowly pour the rest of the water over the grounds in a circular motion. Do not overfill beyond
+the top of the paper filter.
+8. Let the coffee drain completely into the mug before removing the dripper. Discard the paper
+filter and coffee grounds.
 
 User Scenario:
 The User is doing {action}. The User can see {observables}.
@@ -49,7 +53,7 @@ Answer:"""
 INFERENCE_SAMPLE_SUFFIX = """Question: {question}
 Answer:"""
 
-langchain.debug = True
+# langchain.debug = True
 
 class VisualQuestionAnswerer(Node):
 
@@ -214,10 +218,10 @@ class VisualQuestionAnswerer(Node):
         try:
             # Apply detected actions.
             action = self._get_action_before(self._get_sec(msg))
-            # print(f"Latest action: {action}")
+            print(f"Latest action: {action}")
             # Apply detected objects.
             observables = self._get_observables_before(self._get_sec(msg))
-            # print(f"Observed objects: {observables}")
+            print(f"Observed objects: {observables}")
             response = self.chain.run(
                 action=action, observables=observables, question=msg.utterance_text
             )
