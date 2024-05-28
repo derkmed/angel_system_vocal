@@ -139,7 +139,9 @@ class QuestionAnswerer(dialogue.AbstractDialogueNode):
         none if the message should be filtered out. Else, return the incoming
         msg if it can be included.
         """
-        return msg
+        if msg.intent == "inquiry":
+            return msg
+        return None
 
 
 main = make_default_main(QuestionAnswerer)
